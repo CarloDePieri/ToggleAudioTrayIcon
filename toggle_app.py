@@ -2,16 +2,20 @@ import re
 import subprocess
 from types import ModuleType
 
+import reusables
 import wx
 from wx.adv import TaskBarIcon
 
 
 class AudioController:
 
-    name_device_a = "Philips 244E"
-    name_device_b = "G35"
-    icon_device_a = "screen.png"
-    icon_device_b = "headset.png"
+    def __init__(self):
+        # Recover configs
+        config = reusables.config_dict("config.ini")
+        self.name_device_a = config["device_a"]["name"]
+        self.name_device_b = config["device_b"]["name"]
+        self.icon_device_a = config["device_a"]["icon"]
+        self.icon_device_b = config["device_b"]["icon"]
 
     @staticmethod
     def _force_portaudio_reload(sounddevice: ModuleType) -> None:
