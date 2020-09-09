@@ -3,6 +3,10 @@
 This is a Windows tray icon widget that can toggle between two audio devices and will show an 
 icon representing the active one.
 
+## Dependencies
+
+The tool depends on [nircmd](https://www.nirsoft.net/utils/nircmd.html) for the actual device toggling, so it must be included in the `$PATH`.
+
 ## Latest Release
 
 #### Usage
@@ -21,7 +25,7 @@ In the `config.ini` file you can modify fields to customize icons' and devices' 
 
 #### Prerequisites
 
-You will need `Python 3.8` and `pipenv` installed.
+You will need `Python 3.7` and `pipenv` installed.
 
 #### Download
 
