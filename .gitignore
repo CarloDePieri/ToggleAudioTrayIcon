@@ -5,3 +5,5 @@
 /dist/
 /ToggleAudioTrayIcon.spec
 vagrant/ssh_config
+vagrant/.vagrant
+vagrant/mounted
