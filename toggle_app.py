@@ -5,10 +5,11 @@ from types import ModuleType
 import reusables
 import wx
 from wx.adv import TaskBarIcon
+import logging
+import argparse
 
 
 class AudioController:
-
     def __init__(self):
         # Recover configs
         config = reusables.config_dict("config.ini")
@@ -28,6 +29,7 @@ class AudioController:
 
     def get_default_device_name(self) -> str:
         import sounddevice
+
         # force sounddevice to reload the default device from the PortAudio dll
         # noinspection PyTypeChecker
         self._force_portaudio_reload(sounddevice)
@@ -39,7 +41,9 @@ class AudioController:
         return next(matches).group()
 
     def set_default_device(self, device_name: str) -> None:
-            subprocess.run(["nircmd.exe", "setdefaultsounddevice", "{}".format(device_name)])
+        subprocess.run(
+            ["nircmd.exe", "setdefaultsounddevice", "{}".format(device_name)]
+        )
 
     def toggle_between_devices(self) -> None:
         default_device_name = self.get_default_device_name()
@@ -60,7 +64,6 @@ def create_menu_item(menu, label, func):
 
 
 class MyTaskBarIcon(TaskBarIcon):
-
     def __init__(self, frame):
         self.AC = AudioController()
         self.frame = frame
@@ -70,24 +73,29 @@ class MyTaskBarIcon(TaskBarIcon):
 
     def CreatePopupMenu(self):
         menu = wx.Menu()
-        create_menu_item(menu, 'Open Sound Panel', self.AC.open_sound_panel)
+        create_menu_item(menu, "Open Sound Panel", self.AC.open_sound_panel)
         menu.AppendSeparator()
-        create_menu_item(menu, 'Exit', self.on_exit)
+        create_menu_item(menu, "Exit", self.on_exit)
         return menu
 
     def set_icon(self):
-        if self.AC.get_default_device_name() == self.AC.name_device_a:
+        default_device_name = self.AC.get_default_device_name()
+        logging.debug(f"Current default device name: {default_device_name}")
+        if default_device_name == self.AC.name_device_a:
             path = self.AC.icon_device_a
             tooltip = self.AC.name_device_a
         else:
             path = self.AC.icon_device_b
             tooltip = self.AC.name_device_b
+        logging.debug(f"Setting icon to: {path}")
         icon = wx.Icon(wx.Bitmap(path))
         self.SetIcon(icon, tooltip)
+        logging.debug(f"Icon set")
 
     def on_left_down(self, event):
         self.AC.toggle_between_devices()
-        self.set_icon()
+        # Wait a bit to make sure nircmd finish toggling the sound device before updating the icon
+        wx.CallLater(int(500), self.set_icon)
 
     def on_exit(self, event):
         wx.CallAfter(self.Destroy)
@@ -102,6 +110,23 @@ class App(wx.App):
         return True
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
+
+    parser = argparse.ArgumentParser(
+                        prog = 'ToggleAudioTrayIcon',
+                        description = 'A tray icon to quickly toggle default audio device.')
+    parser.add_argument('-d', '--debug', action='store_true', help="print debug message to a log file")
+    args = parser.parse_args()
+
+    if args.debug:
+        logging.basicConfig(
+            filename="ToggleAudioTrayIcon_debug_logs.txt",
+            filemode="a",
+            format="%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s",
+            datefmt="%H:%M:%S",
+            level=logging.DEBUG,
+        )
+        logging.debug("START")
+
     app = App(False)
     app.MainLoop()
