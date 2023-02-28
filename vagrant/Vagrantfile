@@ -1,0 +1,39 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+title = "win-ToggleAudioTrayIcon"
+
+Vagrant.configure("2") do |config|
+
+  config.vm.define title
+
+  config.vm.hostname = title
+
+  config.vm.box = "peru/windows-10-enterprise-x64-eval"
+
+  config.winssh.shell = "powershell"
+
+  config.vm.provider :libvirt do |domain|
+    domain.memory = 4096
+    domain.cpus = 4
+    domain.nested = true
+    domain.storage_pool_name = "vm"
+    domain.title = title
+
+    # Add an additional sound device using qemu. This will not show up in virt-manager
+    domain.qemuargs :value => "-device"
+    domain.qemuargs :value => "intel-hda,bus=pci.0,addr=0x1b"
+    domain.qemuargs :value => "-device"
+    domain.qemuargs :value => "hda-micro,audiodev=hda"
+    domain.qemuargs :value => "-audiodev"
+    domain.qemuargs :value => "pa,id=hda,server=/run/user/1000/pulse/native"
+
+    # HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\MMDevices\Audio\Render
+
+  end
+
+  config.vm.provision "ansible" do |ansible|
+    ansible.playbook = "playbook.yml"
+  end
+
+end

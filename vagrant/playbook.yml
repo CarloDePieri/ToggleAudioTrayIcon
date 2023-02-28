@@ -1,0 +1,167 @@
+---
+- hosts: all
+
+  vars:
+    vm_hostname: "win-ToggleAudioTrayIcon"
+    folder_name: "ToggleAudioTrayIcon"
+    folder: "C:\\{{ folder_name }}"
+    rename_sound_device_folder: "{{ folder }}\\vagrant\\rename-sound-device" 
+    powershell_path: "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
+    desktop: "C:\\Users\\vagrant\\Desktop"
+    source_link: "{{ desktop }}\\ToggleAudioTrayIcon_source.lnk"
+    exe_file: "{{ folder }}\\dist\\ToggleAudioTrayIcon\\ToggleAudioTrayIcon.exe"
+    exe_link: "{{ desktop }}\\ToggleAudioTrayIcon.lnk"
+    link_list: "('{{ folder }}', '{{ source_link }}'),('{{ exe_file }}', '{{ exe_link }}')"
+
+  tasks:
+
+    #
+    # CODEBASE SYNC
+    #
+    - name: Install dependencies.
+      win_chocolatey:
+        name: 
+          - python37
+          - rsync
+          - nircmd
+
+    - name: Check the default ssh shell.
+      ansible.windows.win_powershell:
+        script: |
+          Get-ItemProperty -Path "HKLM:\SOFTWARE\OpenSSH" -Name DefaultShell
+      changed_when: false
+      failed_when: false
+      register: out
+
+    - name: Set the default ssh shell.
+      ansible.windows.win_powershell:
+        script: |
+          New-ItemProperty -Path "HKLM:\SOFTWARE\OpenSSH" -Name DefaultShell -Value "{{ powershell_path }}" -PropertyType String -Force
+      when: out.error|length > 0 and 'Property DefaultShell does not exist' in out.error[0].exception.message
+
+    #
+    # CODEBASE SYNC
+    #
+    # copy module is SLOW and can't ignore paths. syncronize does not work over winrm.
+    # so: use rsync via ssh directly to quickly copy over needed files.
+    #
+    - name: Prepare the code folder.
+      win_file:
+        path: "{{ folder }}"
+        state: directory
+
+    - name: Check if the codebase is up-to-date.
+      shell: |
+        rsync -avun --stats -e 'ssh -F ssh_config' --exclude-from=.rsyncignore ../ {{ vm_hostname }}:../../ToggleAudioTrayIcon | grep 'Number of regular files transferred' | awk -F ": " '{print $2}'
+      delegate_to: localhost
+      changed_when: false
+      failed_when: false
+      register: out
+
+    - name: Sync code with rsync.
+      shell: |
+        vagrant ssh-config > ssh_config && \
+          rsync -ah -e 'ssh -F ssh_config' --exclude-from=.rsyncignore ../ {{ vm_hostname }}:../../{{ folder_name }} 
+      when: out.stdout != "0"
+      delegate_to: localhost
+
+    - name: Fix permissions on bat files.
+      ansible.windows.win_powershell:
+        script: |
+          icacls C:\ToggleAudioTrayIcon\*.bat /grant vagrant:RX
+      when: out.stdout != "0"
+
+    #
+    # AUDIO DEVICE RENAMING
+    #
+    - name: Check if audio devices need renaming.
+      ansible.windows.win_powershell:
+        script: |
+          $render = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\MMDevices\Audio\Render"
+          $title_key = "{a45c254e-df1c-4efd-8020-67d146a850e0},2"
+
+          Get-ChildItem -Path $render | ForEach-Object  {
+              $prop = (Get-ItemProperty -Path Registry::$_\Properties -Name $title_key).$title_key
+              if ( $prop -eq "Speakers") {
+                Write-Output "wrong"
+              }
+          }
+      changed_when: false
+      failed_when: false
+      register: out
+
+    - name: Rename the audio devices.
+      ansible.windows.win_powershell:
+        script: |
+          .\RunScriptAs.ps1 -user "NT SERVICE\TrustedInstaller" -script rename.ps1 
+        chdir: "{{ rename_sound_device_folder }}"
+      when: out.output|length > 0 and 'wrong' in out.output
+
+    #
+    # Install project dependencies
+    #
+    - name: Check if the env is there.
+      win_stat:
+        path: "{{ folder }}\\.venv"
+      changed_when: false
+      failed_when: false
+      register: out
+
+    - block:
+
+      - name: Install pipenv.
+        ansible.windows.win_powershell:
+          script:
+            pip install pipenv
+
+      - name: Install the project.
+        ansible.windows.win_powershell:
+          script: |
+            .\install.bat
+          chdir: "{{ folder }}"
+
+      when: not out.stat.exists
+
+    #
+    # Build the project
+    #
+    - name: Check if the dist folder is there.
+      win_stat:
+        path: "{{ folder }}\\dist"
+      changed_when: false
+      failed_when: false
+      register: out
+
+    - name: Build the project.
+      ansible.windows.win_powershell:
+        script: |
+          .\build.bat
+          icacls {{ exe_file }} /grant vagrant:RX
+        chdir: "{{ folder }}"
+      when: not out.stat.exists
+
+    #
+    # Add shortcuts
+    #
+    - name: Check if the shortcuts are already there.
+      win_stat:
+        path: "{{ source_link }}"
+      changed_when: false
+      failed_when: false
+      register: out
+
+    - name: Add all needed shortcuts.
+      ansible.windows.win_powershell:
+        script: |
+          $links = {{ link_list }}
+          $links | foreach {
+              $WScriptObj = New-Object -ComObject ("WScript.Shell")
+              $shortcut = $WscriptObj.CreateShortcut($_[1])
+              $shortcut.TargetPath = $_[0]
+              $shortcut.Save()
+          }
+          $o = new-object -com shell.application
+          $o.Namespace($links[0][0]).Self.InvokeVerb("pintohome")
+        chdir: "{{ folder }}"
+      register: out
+      when: not out.stat.exists

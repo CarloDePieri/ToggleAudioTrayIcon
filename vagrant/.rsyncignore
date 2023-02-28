@@ -1,0 +1,6 @@
+.venv
+.git
+.gitignore
+vagrant/.vagrant
+vagrant/mounted
+
