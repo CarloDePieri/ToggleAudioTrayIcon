@@ -1,7 +1,14 @@
 # -*- mode: ruby -*-
 # vi: set ft=ruby :
+# 
+# Needed plugins:
+# - vagrant-libvirt
+# - vagrant-winrm
+# - vagrant-windows-guest-nfs
+#
 
-title = "win-ToggleAudioTrayIcon"
+name = "ToggleAudioTrayIcon"
+title = "win-" + name
 
 Vagrant.configure("2") do |config|
 
@@ -13,6 +20,24 @@ Vagrant.configure("2") do |config|
 
   config.winssh.shell = "powershell"
 
+  if File.exist?(".vagrant/machines/" + title + "/libvirt/action_provision")
+    #
+    # Already provisioned, it's now safe to use "config.vm.synced_folder" statement
+    #
+    config.vm.synced_folder "..", "/" + name, type: "nfs"
+    config.vm.provision "ansible" do |ansible|
+      ansible.playbook = "playbook.yml"
+    end
+  else
+    #
+    # Not yet provisioned, install the nfs client
+    #
+    config.vm.provision :shell do |shell|
+      shell.inline = "Enable-WindowsOptionalFeature -FeatureName ServicesForNFS-ClientOnly, ClientForNFS-Infrastructure -Online -NoRestart"
+    end
+    config.vm.post_up_message = ">>> YOU ARE NOT DONE! Run 'vagrant reload --provision'. <<<"
+  end
+
   config.vm.provider :libvirt do |domain|
     domain.memory = 4096
     domain.cpus = 4
@@ -20,7 +45,7 @@ Vagrant.configure("2") do |config|
     domain.storage_pool_name = "vm"
     domain.title = title
 
-    # Add an additional sound device using qemu. This will not show up in virt-manager
+    # Add an additional sound device using qemu. It will not show up in virt-manager though.
     domain.qemuargs :value => "-device"
     domain.qemuargs :value => "intel-hda,bus=pci.0,addr=0x1b"
     domain.qemuargs :value => "-device"
@@ -28,12 +53,6 @@ Vagrant.configure("2") do |config|
     domain.qemuargs :value => "-audiodev"
     domain.qemuargs :value => "pa,id=hda,server=/run/user/1000/pulse/native"
 
-    # HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\MMDevices\Audio\Render
-
-  end
-
-  config.vm.provision "ansible" do |ansible|
-    ansible.playbook = "playbook.yml"
   end
 
 end

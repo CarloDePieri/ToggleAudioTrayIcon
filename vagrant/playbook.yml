@@ -16,12 +16,27 @@
   tasks:
 
     #
-    # CODEBASE SYNC
+    # CHECK NFS SHARE
+    #
+    - name: Check if the NFS share is there.
+      win_stat:
+        path: "{{ folder }}"
+      changed_when: false
+      failed_when: false
+      register: out
+
+    - name: Fail if the NFS share is missing.
+      fail:
+        msg: "The NFS share seems to be missing. This SHOULD happend the first time provision is run: execute 'vagrant reload --provision' on the host to fix it."
+      when: not out.stat.exists
+
+    #
+    # INSTALL DEPENDENCIES
     #
     - name: Install dependencies.
       win_chocolatey:
         name: 
-          - python37
+          - python38
           - rsync
           - nircmd
 
@@ -30,46 +45,14 @@
         script: |
           Get-ItemProperty -Path "HKLM:\SOFTWARE\OpenSSH" -Name DefaultShell
       changed_when: false
-      failed_when: false
       register: out
 
     - name: Set the default ssh shell.
       ansible.windows.win_powershell:
         script: |
           New-ItemProperty -Path "HKLM:\SOFTWARE\OpenSSH" -Name DefaultShell -Value "{{ powershell_path }}" -PropertyType String -Force
+        error_action: "stop"
       when: out.error|length > 0 and 'Property DefaultShell does not exist' in out.error[0].exception.message
-
-    #
-    # CODEBASE SYNC
-    #
-    # copy module is SLOW and can't ignore paths. syncronize does not work over winrm.
-    # so: use rsync via ssh directly to quickly copy over needed files.
-    #
-    - name: Prepare the code folder.
-      win_file:
-        path: "{{ folder }}"
-        state: directory
-
-    - name: Check if the codebase is up-to-date.
-      shell: |
-        rsync -avun --stats -e 'ssh -F ssh_config' --exclude-from=.rsyncignore ../ {{ vm_hostname }}:../../ToggleAudioTrayIcon | grep 'Number of regular files transferred' | awk -F ": " '{print $2}'
-      delegate_to: localhost
-      changed_when: false
-      failed_when: false
-      register: out
-
-    - name: Sync code with rsync.
-      shell: |
-        vagrant ssh-config > ssh_config && \
-          rsync -ah -e 'ssh -F ssh_config' --exclude-from=.rsyncignore ../ {{ vm_hostname }}:../../{{ folder_name }} 
-      when: out.stdout != "0"
-      delegate_to: localhost
-
-    - name: Fix permissions on bat files.
-      ansible.windows.win_powershell:
-        script: |
-          icacls C:\ToggleAudioTrayIcon\*.bat /grant vagrant:RX
-      when: out.stdout != "0"
 
     #
     # AUDIO DEVICE RENAMING
@@ -87,7 +70,6 @@
               }
           }
       changed_when: false
-      failed_when: false
       register: out
 
     - name: Rename the audio devices.
@@ -95,16 +77,16 @@
         script: |
           .\RunScriptAs.ps1 -user "NT SERVICE\TrustedInstaller" -script rename.ps1 
         chdir: "{{ rename_sound_device_folder }}"
+        error_action: "stop"
       when: out.output|length > 0 and 'wrong' in out.output
 
     #
-    # Install project dependencies
+    # INSTALL PROJECT DEPENDENCIES
     #
     - name: Check if the env is there.
       win_stat:
         path: "{{ folder }}\\.venv"
       changed_when: false
-      failed_when: false
       register: out
 
     - block:
@@ -119,11 +101,13 @@
           script: |
             .\install.bat
           chdir: "{{ folder }}"
+        failed_when: not (">> Done!" in r_install.output)
+        register: r_install
 
       when: not out.stat.exists
 
     #
-    # Build the project
+    # BUILD THE PROJECT
     #
     - name: Check if the dist folder is there.
       win_stat:
@@ -139,9 +123,14 @@
           icacls {{ exe_file }} /grant vagrant:RX
         chdir: "{{ folder }}"
       when: not out.stat.exists
+      failed_when: not (">> Built files are in the dist\ToggleAudioTrayIcon folder!" in r_build.output)
+      register: r_build
+
+    - debug:
+        msg: "{{ r_build }}"
 
     #
-    # Add shortcuts
+    # ADD SHORTCUTS
     #
     - name: Check if the shortcuts are already there.
       win_stat:
@@ -163,5 +152,6 @@
           $o = new-object -com shell.application
           $o.Namespace($links[0][0]).Self.InvokeVerb("pintohome")
         chdir: "{{ folder }}"
+        error_action: "stop"
       register: out
       when: not out.stat.exists
