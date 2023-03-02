@@ -12,4 +12,4 @@ pyinstaller = "==5.8.0"
 reusables = "==0.9.6"
 
 [requires]
-python_version = "3.7"
+python_version = "3.8"
