@@ -10,6 +10,9 @@ copy headset.png dist\ToggleAudioTrayIcon\ >NUL
 copy screen.png dist\ToggleAudioTrayIcon\ >NUL
 copy config.ini dist\ToggleAudioTrayIcon\ >NUL
 
+cd dist\
+zip -r ToggleAudioTrayIcon_x64.zip ToggleAudioTrayIcon
+
 echo.
 echo ^>^> Built files are in the dist\ToggleAudioTrayIcon folder!
 echo.

@@ -9,26 +9,12 @@
     powershell_path: "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
     desktop: "C:\\Users\\vagrant\\Desktop"
     source_link: "{{ desktop }}\\ToggleAudioTrayIcon_source.lnk"
-    exe_file: "{{ folder }}\\dist\\ToggleAudioTrayIcon\\ToggleAudioTrayIcon.exe"
+    exe_folder: "{{ folder }}\\dist\\ToggleAudioTrayIcon"
+    exe_file: "{{ exe_folder }}\\ToggleAudioTrayIcon.exe"
     exe_link: "{{ desktop }}\\ToggleAudioTrayIcon.lnk"
-    link_list: "('{{ folder }}', '{{ source_link }}'),('{{ exe_file }}', '{{ exe_link }}')"
+    link_list: "('{{ folder }}', '{{ source_link }}', '{{ folder }}'),('{{ exe_file }}', '{{ exe_link }}', '{{ exe_folder }}')"
 
   tasks:
-
-    #
-    # CHECK NFS SHARE
-    #
-    - name: Check if the NFS share is there.
-      win_stat:
-        path: "{{ folder }}"
-      changed_when: false
-      failed_when: false
-      register: out
-
-    - name: Fail if the NFS share is missing.
-      fail:
-        msg: "The NFS share seems to be missing. This SHOULD happend the first time provision is run: execute 'vagrant reload --provision' on the host to fix it."
-      when: not out.stat.exists
 
     #
     # INSTALL DEPENDENCIES
@@ -36,9 +22,14 @@
     - name: Install dependencies.
       win_chocolatey:
         name: 
+          # needed
           - python38
           - rsync
           - nircmd
+          - zip
+          # nice to have
+          - notepadplusplus
+          - vim
 
     - name: Check the default ssh shell.
       ansible.windows.win_powershell:
@@ -53,6 +44,31 @@
           New-ItemProperty -Path "HKLM:\SOFTWARE\OpenSSH" -Name DefaultShell -Value "{{ powershell_path }}" -PropertyType String -Force
         error_action: "stop"
       when: out.error|length > 0 and 'Property DefaultShell does not exist' in out.error[0].exception.message
+
+    #
+    # CODEBASE SYNC
+    #
+    # copy module is SLOW and can't ignore paths. syncronize does not work over winrm.
+    # so: use rsync via ssh directly to quickly copy over needed files.
+    #
+    # While programming, use make watch to keep the guest folder in sync!
+    #
+    - name: Prepare the code and ssh home folder.
+      win_file:
+        path: "{{ folder }}"
+        state: directory
+
+    - name: Check if the codebase is up-to-date.
+      command: make check
+      delegate_to: localhost
+      changed_when: false
+      failed_when: false
+      register: out
+
+    - name: Sync code with rsync.
+      command: make sync
+      when: out.stdout != "0"
+      delegate_to: localhost
 
     #
     # AUDIO DEVICE RENAMING
@@ -126,9 +142,6 @@
       failed_when: not (">> Built files are in the dist\ToggleAudioTrayIcon folder!" in r_build.output)
       register: r_build
 
-    - debug:
-        msg: "{{ r_build }}"
-
     #
     # ADD SHORTCUTS
     #
@@ -147,6 +160,7 @@
               $WScriptObj = New-Object -ComObject ("WScript.Shell")
               $shortcut = $WscriptObj.CreateShortcut($_[1])
               $shortcut.TargetPath = $_[0]
+              $shortcut.WorkingDirectory = $_[2]
               $shortcut.Save()
           }
           $o = new-object -com shell.application

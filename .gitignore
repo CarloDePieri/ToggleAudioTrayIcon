@@ -3,6 +3,7 @@
 .idea
 /Toggle Audio.lnk
 /dist/
+/redist/
 /ToggleAudioTrayIcon.spec
 vagrant/ssh_config
 vagrant/.vagrant

@@ -1,6 +1,9 @@
+.idea
 .venv
 .git
 .gitignore
+dist
+redist
 vagrant/.vagrant
 vagrant/mounted
-
+ToggleAudioTrayIcon.spec

@@ -4,10 +4,10 @@ $id = 0
 
 Get-ChildItem -Path $render | ForEach-Object  {
   if ($id++ -eq 0) {
-    $name = "Philips 244E"
+    $name = "Headset"
   }
   else {
-    $name = "G35"
+    $name = "HDMI"
   }
   Set-ItemProperty -Force -Path Registry::$_\Properties -Name $title_key -Value $name
 }
